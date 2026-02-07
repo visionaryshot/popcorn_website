@@ -25,34 +25,6 @@ export default function CheckoutForm() {
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Check URL for order ID (in case page was reloaded)
-  const [urlOrderId, setUrlOrderId] = useState('');
-  
-  useEffect(() => {
-    setMounted(true);
-    // Check URL params for order ID
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get('id');
-    if (id) {
-      setUrlOrderId(id);
-      // Also store in localStorage
-      localStorage.setItem('lastOrderId', id);
-    }
-  }, []);
-
-  // Load order ID from localStorage on mount
-  useEffect(() => {
-    const savedOrderId = localStorage.getItem('lastOrderId');
-    const savedTotal = localStorage.getItem('lastOrderTotal');
-    
-    if (savedOrderId && !urlOrderId) {
-      setUrlOrderId(savedOrderId);
-      if (savedTotal) {
-        setLastOrderTotal(parseFloat(savedTotal));
-      }
-    }
-  }, [urlOrderId]);
-
   const [formData, setFormData] = useState<FormData>({
     customerName: '',
     whatsappNumber: '',
@@ -65,8 +37,24 @@ export default function CheckoutForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
-  const [orderId, setOrderId] = useState('');
-  const [lastOrderTotal, setLastOrderTotal] = useState(0);
+  const [lastOrderId, setLastOrderId] = useState<string | null>(null);
+  const [lastOrderTotal, setLastOrderTotal] = useState<number>(0);
+
+  useEffect(() => {
+    setMounted(true);
+    // Check for existing order ID in URL
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get('id');
+      if (id) {
+        setLastOrderId(id);
+        const savedTotal = localStorage.getItem('lastOrderTotal');
+        if (savedTotal) {
+          setLastOrderTotal(parseFloat(savedTotal));
+        }
+      }
+    }
+  }, []);
 
   const validateForm = (): FormErrors => {
     const errors: FormErrors = {};
@@ -75,8 +63,6 @@ export default function CheckoutForm() {
       errors.customerName = 'Name is required';
     }
     
-    // WhatsApp Regex: Allows 10-15 digits, optional + at start.
-    // Examples: 08012345678, +2348012345678
     const phoneRegex = /^[+]?[0-9]{10,15}$/;
     if (!formData.whatsappNumber.trim()) {
       errors.whatsappNumber = 'WhatsApp number is required';
@@ -142,11 +128,9 @@ export default function CheckoutForm() {
     setErrorMessage('');
 
     try {
-      // Upload payment proof to Supabase Storage
       let paymentProofUrl = null;
       
       if (paymentProof) {
-        // Sanitize filename to avoid issues with special characters
         const fileExt = paymentProof.name.split('.').pop();
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
         
@@ -155,7 +139,6 @@ export default function CheckoutForm() {
           .upload(fileName, paymentProof);
         
         if (uploadError) {
-          console.error('Upload error:', uploadError);
           if (uploadError.message === 'Failed to fetch') {
             throw new Error('Connection failed. Please check your internet or AdBlocker.');
           }
@@ -169,7 +152,6 @@ export default function CheckoutForm() {
         paymentProofUrl = urlData.publicUrl;
       }
 
-      // Create order in Supabase
       const { data: orderData, error: orderError } = await supabase
         .from('orders')
         .insert({
@@ -188,9 +170,6 @@ export default function CheckoutForm() {
         throw new Error('Failed to create order: ' + (orderError?.message || 'Unknown error'));
       }
 
-      console.log('Order created successfully:', orderData.id);
-
-      // Insert order items
       const orderItems = cart.map(item => ({
         order_id: orderData.id,
         product_name: item.name,
@@ -198,7 +177,6 @@ export default function CheckoutForm() {
         unit_price: item.price,
       }));
 
-      // Try to insert order items, but don't fail if this part errors
       try {
         const { error: itemsError } = await supabase
           .from('order_items')
@@ -211,20 +189,16 @@ export default function CheckoutForm() {
         console.warn('Warning: Error saving order items:', itemsCatchError);
       }
 
-      setOrderId(orderData.id);
-      setLastOrderTotal(totalPrice);
-      // Store order ID in localStorage so it persists after refresh
+      // Store order info and redirect
       localStorage.setItem('lastOrderId', orderData.id);
       localStorage.setItem('lastOrderTotal', totalPrice.toString());
-      setSubmitStatus('success');
       clearCart();
       
-      // Update URL with order ID for easy sharing/refresh
+      // Redirect to order confirmation page
       const newUrl = new URL(window.location.href);
+      newUrl.pathname = '/order-confirmed';
       newUrl.searchParams.set('id', orderData.id);
-      window.history.replaceState({}, '', newUrl.toString());
-      
-      console.log('Order created with ID:', orderData.id);
+      window.location.href = newUrl.toString();
       
     } catch (error: unknown) {
       setSubmitStatus('error');
@@ -234,46 +208,20 @@ export default function CheckoutForm() {
     }
   };
 
-  // Show a loading skeleton instead of null to prevent "slow" feeling
-  if (!mounted) {
-    return (
-      <div className="animate-pulse space-y-8">
-        <div className="h-64 bg-gray-100 rounded-2xl"></div>
-        <div className="h-96 bg-gray-100 rounded-2xl"></div>
-      </div>
-    );
-  }
-
-  if (!cart || cart.length === 0) {
-    return (
-      <div className="text-center py-16">
-        <div className="text-6xl mb-4">🍿</div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Your cart is empty</h2>
-        <p className="text-gray-600 mb-6">Add some delicious popcorn to get started!</p>
-        <a href="/" className="btn-primary inline-block">
-          Browse Products
-        </a>
-      </div>
-    );
-  }
-
-  if (submitStatus === 'success' || urlOrderId) {
-    const displayOrderId = orderId || urlOrderId;
-    const displayTotal = lastOrderTotal || totalPrice;
-    
-    // Debug: Log to console for troubleshooting
-    console.log('Order ID debug:', { orderId, urlOrderId, displayOrderId });
-    
+  // Show success message when order was placed
+  if (lastOrderId && submitStatus !== 'error') {
     const whatsappMessage = `Hello, I just placed an order!
-Order ID: ${displayOrderId}
-Total: ₦${displayTotal.toFixed(2)}
+Order ID: ${lastOrderId}
+Total: ₦${lastOrderTotal.toFixed(2)}
 Please confirm my payment.`;
     const whatsappUrl = `https://wa.me/2347086879592?text=${encodeURIComponent(whatsappMessage)}`;
-    const trackOrderUrl = `/track?id=${displayOrderId}`;
+    const trackOrderUrl = `/track?id=${lastOrderId}`;
 
     const copyOrderId = () => {
-      navigator.clipboard.writeText(displayOrderId);
-      alert('Order ID copied!');
+      if (lastOrderId) {
+        navigator.clipboard.writeText(lastOrderId);
+        alert('Order ID copied!');
+      }
     };
 
     return (
@@ -281,14 +229,13 @@ Please confirm my payment.`;
         <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
           <CheckCircle className="w-10 h-10 text-green-500" />
         </div>
-        <h2 className="text-3xl font-bold text-gray-900 mb-4">✅ Order Placed Successfully!</h2>
+        <h2 className="text-3xl font-bold text-gray-900 mb-4">Order Placed Successfully!</h2>
         <p className="text-gray-600 mb-2">Thank you for your order!</p>
         
-        {/* Order ID - As Requested Design */}
         <div className="bg-gradient-to-r from-butter-500 to-caramel-500 rounded-2xl p-6 mx-auto max-w-md mb-6">
-          <p className="text-white/90 text-sm mb-2">🆔 Your Order ID:</p>
+          <p className="text-white/90 text-sm mb-2">Your Order ID:</p>
           <div className="flex items-center justify-center space-x-3">
-            <p className="font-mono font-bold text-2xl text-white">{displayOrderId}</p>
+            <p className="font-mono font-bold text-2xl text-white">{lastOrderId}</p>
             <button
               onClick={copyOrderId}
               className="bg-white/20 text-white px-3 py-1 rounded-lg text-sm hover:bg-white/30 transition-colors"
@@ -299,7 +246,7 @@ Please confirm my payment.`;
         </div>
         
         <p className="text-gray-600 mb-6">
-          🔍 <a href={trackOrderUrl} className="text-butter-600 font-semibold hover:underline">
+          <a href={trackOrderUrl} className="text-butter-600 font-semibold hover:underline">
             Track Your Order →
           </a>
         </p>
@@ -326,9 +273,30 @@ Please confirm my payment.`;
     );
   }
 
+  if (!mounted) {
+    return (
+      <div className="animate-pulse space-y-8">
+        <div className="h-64 bg-gray-100 rounded-2xl"></div>
+        <div className="h-96 bg-gray-100 rounded-2xl"></div>
+      </div>
+    );
+  }
+
+  if (!cart || cart.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <div className="text-6xl mb-4">🍿</div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Your cart is empty</h2>
+        <p className="text-gray-600 mb-6">Add some delicious popcorn to get started!</p>
+        <a href="/" className="btn-primary inline-block">
+          Browse Products
+        </a>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
-      {/* Order Summary */}
       <div className="bg-gradient-to-br from-butter-50 to-cream-100 rounded-2xl p-6">
         <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
           <span className="mr-2">🧺</span> Order Summary
@@ -365,7 +333,6 @@ Please confirm my payment.`;
         </div>
       </div>
 
-      {/* Customer Information */}
       <div className="bg-white rounded-2xl p-6 shadow-lg">
         <h3 className="text-lg font-bold text-gray-900 mb-6 flex items-center">
           <CreditCard className="w-5 h-5 mr-2 text-butter-500" />
@@ -386,7 +353,21 @@ Please confirm my payment.`;
             />
             {errorMessage && !formData.customerName && <p className="text-red-500 text-xs mt-1">Name is required</p>}
           </div>
-          
+
+          <div>
+            <label className="label">WhatsApp Number *</label>
+            <input
+              type="text"
+              name="whatsappNumber"
+              value={formData.whatsappNumber}
+              onChange={handleInputChange}
+              className="input-field"
+              placeholder="08012345678"
+              required
+            />
+            {errorMessage && !formData.whatsappNumber && <p className="text-red-500 text-xs mt-1">WhatsApp number is required</p>}
+          </div>
+
           <div>
             <label className="label">Nickname *</label>
             <input
@@ -399,20 +380,6 @@ Please confirm my payment.`;
               required
             />
             {errorMessage && !formData.nickname && <p className="text-red-500 text-xs mt-1">Nickname is required</p>}
-          </div>
-
-          <div>
-            <label className="label">WhatsApp Number *</label>
-            <input
-              type="tel"
-              name="whatsappNumber"
-              value={formData.whatsappNumber}
-              onChange={handleInputChange}
-              className="input-field"
-              placeholder="08012345678"
-              required
-            />
-            {errorMessage && errorMessage.includes('WhatsApp') && <p className="text-red-500 text-xs mt-1">{errorMessage}</p>}
           </div>
 
           <div>

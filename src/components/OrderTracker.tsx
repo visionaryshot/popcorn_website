@@ -1,24 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Package, CheckCircle, Clock, XCircle, Image as ImageIcon, MessageCircle, Loader2, ShoppingBag } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Order, OrderItem } from '@/lib/types';
 
+// Extended Order type with order_items for this component
+interface OrderWithItems extends Order {
+  order_items?: OrderItem[];
+}
+
 export default function OrderTracker() {
   const [orderId, setOrderId] = useState('');
-  const [order, setOrder] = useState<Order | null>(null);
+  const [order, setOrder] = useState<OrderWithItems | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [notFound, setNotFound] = useState(false);
 
-  const searchOrder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!orderId.trim()) {
-      setError('Please enter your Order ID');
-      return;
+  // Auto-load order from URL on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlOrderId = params.get('id');
+      if (urlOrderId) {
+        setOrderId(urlOrderId);
+        searchOrderFromId(urlOrderId);
+      }
     }
+  }, []);
+
+  const searchOrderFromId = async (id: string) => {
+    if (!id.trim()) return;
 
     setLoading(true);
     setError('');
@@ -26,11 +38,10 @@ export default function OrderTracker() {
     setOrder(null);
 
     try {
-      // Fetch order with items
       const { data, error: fetchError } = await supabase
         .from('orders')
         .select('*, order_items(*)')
-        .eq('id', orderId.trim())
+        .eq('id', id.trim())
         .single();
 
       if (fetchError || !data) {
@@ -38,13 +49,19 @@ export default function OrderTracker() {
         return;
       }
 
-      setOrder(data);
+      // Cast data to include order_items
+      setOrder(data as OrderWithItems);
     } catch (err) {
       setError('Failed to fetch order. Please try again.');
       console.error('Error fetching order:', err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const searchOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await searchOrderFromId(orderId);
   };
 
   const getStatusBadge = (status: string) => {
@@ -242,7 +259,7 @@ export default function OrderTracker() {
           <div className="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-100">
             <h3 className="text-lg font-bold text-gray-900 mb-4">🧺 Order Items</h3>
             <div className="space-y-3">
-              {order.items?.map((item: OrderItem, index: number) => (
+              {order.order_items?.map((item: OrderItem, index: number) => (
                 <div key={index} className="flex justify-between items-center py-3 border-b border-gray-100 last:border-0">
                   <div className="flex items-center space-x-3">
                     <span className="text-xl">🍿</span>
