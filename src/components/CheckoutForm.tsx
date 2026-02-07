@@ -196,6 +196,7 @@ export default function CheckoutForm() {
       
       // Redirect to order confirmation page
       const newUrl = new URL(window.location.href);
+      newUrl.pathname = '/order-confirmed';
       newUrl.searchParams.set('id', orderData.id);
       window.location.href = newUrl.toString();
       
