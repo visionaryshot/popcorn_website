@@ -91,11 +91,11 @@ export default function CheckoutForm() {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        alert('File size must be less than 5MB');
+        window.alert('File size must be less than 5MB');
         return;
       }
       if (!file.type.startsWith('image/')) {
-        alert('Please upload an image file');
+        window.alert('Please upload an image file');
         return;
       }
       setPaymentProof(file);
@@ -196,7 +196,6 @@ export default function CheckoutForm() {
       
       // Redirect to order confirmation page
       const newUrl = new URL(window.location.href);
-      newUrl.pathname = '/order-confirmed';
       newUrl.searchParams.set('id', orderData.id);
       window.location.href = newUrl.toString();
       
@@ -220,7 +219,7 @@ Please confirm my payment.`;
     const copyOrderId = () => {
       if (lastOrderId) {
         navigator.clipboard.writeText(lastOrderId);
-        alert('Order ID copied!');
+        window.alert('Order ID copied!');
       }
     };
 

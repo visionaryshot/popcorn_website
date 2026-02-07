@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Eye, CheckCircle, Clock, XCircle, Image as ImageIcon, Loader2, Lock, LogOut, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Order } from '@/lib/types';
@@ -16,18 +16,7 @@ export default function AdminTable() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  useEffect(() => {
-    // Check for existing session
-    const isAuth = localStorage.getItem('visionary_admin_auth');
-    if (isAuth === 'true') {
-      setIsAuthenticated(true);
-      fetchOrders();
-    } else {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     setIsLoading(true);
 
     try {
@@ -38,12 +27,23 @@ export default function AdminTable() {
 
       if (error) throw error;
       setOrders(data || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching orders:', error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    // Check for existing session
+    const isAuth = sessionStorage.getItem('visionary_admin_auth');
+    if (isAuth === 'true') {
+      setIsAuthenticated(true);
+      fetchOrders();
+    } else {
+      setIsLoading(false);
+    }
+  }, [fetchOrders]);
 
   const updateOrderStatus = async (orderId: string, status: 'Pending' | 'Confirmed' | 'Cancelled') => {
     setUpdatingId(orderId);
@@ -63,14 +63,14 @@ export default function AdminTable() {
       );
     } catch (error) {
       console.error('Error updating order:', error);
-      alert('Failed to update order status');
+      window.alert('Failed to update order status');
     } finally {
       setUpdatingId(null);
     }
   };
 
   const deleteOrder = async (orderId: string) => {
-    if (!confirm('Are you sure you want to delete this order? This action cannot be undone.')) {
+    if (!window.confirm('Are you sure you want to delete this order? This action cannot be undone.')) {
       return;
     }
 
@@ -103,10 +103,10 @@ export default function AdminTable() {
         setSelectedOrder(null);
       }
       
-      alert('Order deleted successfully!');
+      window.alert('Order deleted successfully!');
     } catch (error) {
       console.error('Error deleting order:', error);
-      alert('Failed to delete order');
+      window.alert('Failed to delete order');
     } finally {
       setUpdatingId(null);
     }
@@ -150,16 +150,16 @@ export default function AdminTable() {
     // SPECIAL ADMIN CREDENTIALS
     if (username.trim() === 'admin' && password === 'visionary123') {
       setIsAuthenticated(true);
-      localStorage.setItem('visionary_admin_auth', 'true');
+      sessionStorage.setItem('visionary_admin_auth', 'true');
       fetchOrders();
     } else {
-      alert('Invalid credentials. Access Denied.');
+      window.alert('Invalid credentials. Access Denied.');
     }
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    localStorage.removeItem('visionary_admin_auth');
+    sessionStorage.removeItem('visionary_admin_auth');
     setUsername('');
     setPassword('');
     setOrders([]);

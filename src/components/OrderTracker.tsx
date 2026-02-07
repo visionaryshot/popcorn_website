@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Search, Package, CheckCircle, Clock, XCircle, Image as ImageIcon, MessageCircle, Loader2, ShoppingBag } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Order, OrderItem } from '@/lib/types';
@@ -17,19 +17,7 @@ export default function OrderTracker() {
   const [error, setError] = useState('');
   const [notFound, setNotFound] = useState(false);
 
-  // Auto-load order from URL on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const urlOrderId = params.get('id');
-      if (urlOrderId) {
-        setOrderId(urlOrderId);
-        searchOrderFromId(urlOrderId);
-      }
-    }
-  }, []);
-
-  const searchOrderFromId = async (id: string) => {
+  const searchOrderFromId = useCallback(async (id: string) => {
     if (!id.trim()) return;
 
     setLoading(true);
@@ -51,13 +39,25 @@ export default function OrderTracker() {
 
       // Cast data to include order_items
       setOrder(data as OrderWithItems);
-    } catch (err) {
+    } catch (err: any) {
       setError('Failed to fetch order. Please try again.');
       console.error('Error fetching order:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Auto-load order from URL on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlOrderId = params.get('id');
+      if (urlOrderId) {
+        setOrderId(urlOrderId);
+        searchOrderFromId(urlOrderId);
+      }
+    }
+  }, [searchOrderFromId]);
 
   const searchOrder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -325,4 +325,3 @@ export default function OrderTracker() {
     </div>
   );
 }
-
